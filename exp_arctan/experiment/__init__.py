@@ -1,1 +1,4 @@
-from .display import Experiment, section
+from .transcript import Transcript
+from .experiment import Experiment, \
+    section, subsection, subsubsection, warning, debug, \
+    fail

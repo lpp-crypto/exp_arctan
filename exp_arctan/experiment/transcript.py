@@ -40,8 +40,6 @@ from rich.logging import RichHandler
 from rich.text import Text
 
 
-ONGOING_EXPERIMENT = None
-
 
 class StickyDateTime:
     """
@@ -104,7 +102,7 @@ class StickyDateTime:
         return Text(f"{rendered:<{self._full_width}}"[: self._full_width])
 
 
-class Experiment:
+class Transcript:
     """
     Context manager that routes `print()` through a Rich-backed logger for
     the duration of the `with` block, then restores the original `print`.
@@ -130,13 +128,12 @@ class Experiment:
     def __init__(
         self,
         title: str,
-        level: int = logging.INFO,
         logfile: Optional[str] = None,
         date_fmt: str = "%m/%d/%y",
         time_fmt: str = "%H:%M:%S",
+        verbose: str = "normal"
     ):
         self.title = title
-        self.level = level
         self.logfile = Path(logfile) if logfile else None
         self.date_fmt = date_fmt
         self.time_fmt = time_fmt
@@ -147,12 +144,17 @@ class Experiment:
         self._time_formatter: Optional[StickyDateTime] = None
         self.console: Optional[Console] = None
 
+        verbose_table = {
+            "debug"  : logging.DEBUG,
+            "normal" : logging.INFO,
+            "errors" : logging.ERROR,
+            "silent" : logging.CRITICAL + 1,
+        }
+        self.level = verbose_table[verbose]
 
-    def section(self, depth: int, title: str) -> None:
-        self._logger.info("#" * depth + " " + title)
         
 
-    def __enter__(self) -> "Experiment":
+    def start(self):
         self._logger = logging.getLogger(f"experiment.{id(self)}.{self.title}")
         self._logger.handlers.clear()
         self._logger.setLevel(self.level)
@@ -193,10 +195,8 @@ class Experiment:
         # (console); a plain FileHandler would log it as literal text.
         # Keeping this plain avoids that asymmetry between console and file.
         self._logger.info(f"=== {self.title} : starting ===")
+        
 
-        global ONGOING_EXPERIMENT
-        ONGOING_EXPERIMENT = self
-        return self
 
     
     def stamp(self, timestamp_text: str, *args) -> None:
@@ -208,7 +208,8 @@ class Experiment:
         self._time_formatter.override_next(timestamp_text)
         self._logger.info(" ".join(str(a) for a in args))
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        
+    def finish(self) -> None:
         self._logger.info(f"=== {self.title} : finished ===")
 
         builtins.print = self._saved_print
@@ -217,8 +218,17 @@ class Experiment:
             handler.close()
             self._logger.removeHandler(handler)
 
-        return False  # never suppress exceptions
 
-    
-def section(title: str) -> None:
-    ONGOING_EXPERIMENT.section(2, title)
+    def section(self, depth: int, title: str) -> None:
+        self._logger.info("#" * depth + " " + title)
+
+    def debug(self, reason: str) -> None:
+        self._logger.debug(reason)
+
+    def warning(self, reason: str) -> None:
+        self._logger.warning(reason)
+        
+    def fail(self, reason: str) -> None:
+        self._logger.error(reason)
+
+
