@@ -40,6 +40,33 @@ from rich.logging import RichHandler
 from rich.text import Text
 
 
+def to_roman(n: int) -> str:
+    if not 0 < n < 4000:
+        raise ValueError("Roman numerals only support 1-3999")
+    values = [
+        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+    ]
+    result = []
+    for value, symbol in values:
+        count, n = divmod(n, value)
+        result.append(symbol * count)
+    return "".join(result)
+
+
+def pretty_counters(counters):
+    result = to_roman(counters[0])
+    if len(counters) > 1:
+        result += to_roman("-" + str(counters[1]))
+    if len(counters) > 2:
+        result += to_roman(to_roman("." + counters[2]).lower())
+    return result + ")"
+
+
+# !SECTION! Trick to bypass some `logging` behaviors
+
+# !SUBSECTION! To not display the time on every line if it hasn't changed 
 
 class StickyDateTime:
     """
@@ -72,6 +99,7 @@ class StickyDateTime:
             f"[{probe.strftime(self.date_fmt)} {probe.strftime(self.time_fmt)}]"
         )
 
+        
     def override_next(self, text: str) -> None:
         """
         Replace the timestamp field for the *next* rendered line only.
@@ -80,6 +108,7 @@ class StickyDateTime:
         """
         self._override = text
 
+        
     def __call__(self, dt) -> Text:
         if self._override is not None:
             text, self._override = self._override, None  # consume: one-shot
@@ -102,6 +131,34 @@ class StickyDateTime:
         return Text(f"{rendered:<{self._full_width}}"[: self._full_width])
 
 
+# !SUBSECTION! To remove the display of "INFO" 
+    
+class QuietInfoRichHandler(RichHandler):
+    """RichHandler that hides the level label for INFO, keeps it for others."""
+    LEVEL_OVERRIDES = {
+        logging.INFO: "",
+        logging.ERROR: "FAIL",
+        logging.WARNING: "WARN",
+        logging.CRITICAL: "CRIT",
+    }
+    LEVEL_WIDTH = 4
+
+    def get_level_text(self, record: logging.LogRecord) -> Text:
+        style = f"logging.level.{record.levelname.lower()}"
+        if record.levelno in self.LEVEL_OVERRIDES:
+            text = self.LEVEL_OVERRIDES[record.levelno]
+        else:
+            text = record.levelname
+        return Text(text.ljust(self.LEVEL_WIDTH)[: self.LEVEL_WIDTH], style=style)
+    def get_level_text(self, record: logging.LogRecord) -> Text:
+        if record.levelno == logging.INFO:
+            return Text(" " * 8)  # blank, same width as a normal level label
+        return super().get_level_text(record)
+
+
+    
+# !SECTION!  The actual Transcript class
+    
 class Transcript:
     """
     Context manager that routes `print()` through a Rich-backed logger for
@@ -142,6 +199,7 @@ class Transcript:
         self._logger: Optional[logging.Logger] = None
         self._handlers = []
         self._time_formatter: Optional[StickyDateTime] = None
+        self._sections_counters = [0]
         self.console: Optional[Console] = None
 
         verbose_table = {
@@ -163,7 +221,7 @@ class Transcript:
         self._time_formatter = StickyDateTime(self.date_fmt, self.time_fmt)
         self.console = Console()
 
-        console_handler = RichHandler(
+        console_handler = QuietInfoRichHandler(
             console=self.console,
             show_time=True,
             show_level=True,
@@ -210,7 +268,7 @@ class Transcript:
 
         
     def finish(self) -> None:
-        self._logger.info(f"=== {self.title} : finished ===")
+        self._logger.info(f"[DONE]")
 
         builtins.print = self._saved_print
 
@@ -220,7 +278,11 @@ class Transcript:
 
 
     def section(self, depth: int, title: str) -> None:
-        self._logger.info("#" * depth + " " + title)
+        section_format = "[b]{}[/b]"
+        self._sections_counters[0] += 1
+        self.stamp("SEC " + pretty_counters(self._sections_counters),
+                   section_format.format(title))
+        self._logger.info(section_format.format("=" * len (title)))
 
     def debug(self, reason: str) -> None:
         self._logger.debug(reason)
