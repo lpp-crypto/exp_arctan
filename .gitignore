@@ -1,0 +1,17 @@
+*~
+*#
+*cython_functions.cpp
+*.so
+*__pycache__
+.vscode*
+*.egg-info
+build
+.nfs*
+
+## MacOS
+
+.DS_Store
+
+## Claude
+
+CLAUDE.md
