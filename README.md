@@ -6,3 +6,8 @@ What was (and for now still is) the part of [sboxU](https://github.com/lpp-crypt
 
 Work in progress, don't try to use it (yet).
 
+## Installation
+
+```sh
+pip install pip install git+https://github.com/lpp-crypto/exp_arctan.git
+```
