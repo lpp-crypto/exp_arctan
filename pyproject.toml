@@ -1,0 +1,19 @@
+[project]
+name = "exp_arctan"
+version = "0.1"
+description = "Experimental Artifact Tangler: easily create python script with a highly structured output transcript, possibly starting from a literate markdown file."
+dependencies = [ "rich" ]
+
+[project.scripts]
+exp_arctan  = "exp_arctan.scripts.tangler:main_cli"
+
+[build-system]
+requires = ["setuptools", "wheel" ]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["exp_arctan*"] 
+namespaces = false
