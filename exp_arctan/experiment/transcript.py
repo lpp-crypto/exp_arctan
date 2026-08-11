@@ -42,7 +42,15 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.text import Text
 from rich.table import Table
-from rich.progress import Progress
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
+
 
 
 def to_roman(n: int) -> str:
@@ -337,16 +345,27 @@ class Transcript:
 
             
     def progress_bar(self, iterated_over, title: str):
-        # the `console` optionnal arg is needed for the display to play nicely with logs
-        with Progress(console=self.console) as progress:
-            if hasattr(iterated_over, "__len__"):
-                task = progress.add_task(title, total=len(iterated_over))
-            else:
-                task = progress.add_task(title)
+        if self.level > logging.INFO:
             for x in iterated_over:
-                progress.update(task, advance=1)
                 yield x
-                
+        else:
+            columns = (
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TimeElapsedColumn(),
+                TimeRemainingColumn(),
+            )
+            # the `console` optional arg is needed for the display to play nicely with logs
+            with Progress(*columns, console=self.console) as progress:
+                if hasattr(iterated_over, "__len__"):
+                    task = progress.add_task(title, total=len(iterated_over))
+                else:
+                    task = progress.add_task(title, total=None)
+                for x in iterated_over:
+                    progress.update(task, advance=1)
+                    yield x
+                    
 
     def finalize_sections(self, target_depth: int) -> int:
         total_depth = len(self._sections_counters)
