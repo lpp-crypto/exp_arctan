@@ -335,6 +335,8 @@ class Transcript:
     def finish(self) -> None:
         self._logger.info(f"[DONE]")
         self.finalize_sections(0)
+
+        # !TODO! the times table doesn't work
         self.console.print(self._times_table)
 
         builtins.print = self._saved_print
