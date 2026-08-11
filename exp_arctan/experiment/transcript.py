@@ -32,17 +32,24 @@ from __future__ import annotations
 import builtins
 import logging
 import sys
+import datetime
+
+from math import floor
 from pathlib import Path
 from typing import Optional
 
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.text import Text
+from rich.table import Table
+from rich.progress import Progress
 
 
 def to_roman(n: int) -> str:
-    if not 0 < n < 4000:
+    if not 0 <= n < 4000:
         raise ValueError("Roman numerals only support 1-3999")
+    elif n == 0:
+        return "0"
     values = [
         (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
         (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
@@ -58,9 +65,9 @@ def to_roman(n: int) -> str:
 def pretty_counters(counters):
     result = to_roman(counters[0])
     if len(counters) > 1:
-        result += to_roman("-" + str(counters[1]))
+        result += "-" + str(counters[1])
     if len(counters) > 2:
-        result += to_roman(to_roman("." + counters[2]).lower())
+        result += "." + to_roman(counters[2]).lower()
     return result + ")"
 
 
@@ -132,10 +139,11 @@ class StickyDateTime:
 
 
 # !SUBSECTION! To remove the display of "INFO" 
-    
-class QuietInfoRichHandler(RichHandler):
-    """RichHandler that hides the level label for INFO, keeps it for others."""
+
+
+class CustomRichHandler(RichHandler):
     LEVEL_OVERRIDES = {
+        logging.INFO-1: "END",
         logging.INFO: "",
         logging.ERROR: "FAIL",
         logging.WARNING: "WARN",
@@ -144,16 +152,60 @@ class QuietInfoRichHandler(RichHandler):
     LEVEL_WIDTH = 4
 
     def get_level_text(self, record: logging.LogRecord) -> Text:
+        """
+
+        The names of the levels is hard coded in the logic of RichHandler, so using custom level names would a priori break their highlighting (i.e., FAIL being in red). Rewriting this method bypasses this problem.
+        
+        """
+        # 
         style = f"logging.level.{record.levelname.lower()}"
         if record.levelno in self.LEVEL_OVERRIDES:
             text = self.LEVEL_OVERRIDES[record.levelno]
         else:
             text = record.levelname
         return Text(text.ljust(self.LEVEL_WIDTH)[: self.LEVEL_WIDTH], style=style)
-    def get_level_text(self, record: logging.LogRecord) -> Text:
-        if record.levelno == logging.INFO:
-            return Text(" " * 8)  # blank, same width as a normal level label
-        return super().get_level_text(record)
+
+    
+
+# !SUBSECTION! To simplify tracking durations: the Chonograph
+
+
+
+class Chronograph:
+    def __init__(self, title):
+        self.title = title
+        self.start_time = datetime.datetime.now()
+
+    def __str__(self):
+        return "\"{}\" lasted {}s".format(
+            self.title,
+            self.elapsed_seconds(),
+        )
+
+    def elapsed_seconds(self):
+        return floor((datetime.datetime.now() - self.start_time).total_seconds())
+
+    
+    def elapsed_time_str(self):
+        tot_secs = self.elapsed_seconds()
+        days = floor(tot_secs / 86400)
+        hours = floor((tot_secs % 86400) / 3600)
+        minutes = floor((tot_secs % 3600) / 60)
+        seconds = tot_secs % 60
+        return "{:d}d {:02d}h {:02d}m {:2d}s".format(
+            days,
+            hours,
+            minutes,
+            seconds
+        )
+
+    def __rich_str__(self):
+        return "[blue]{}[/blue] lasted [bold]{}[/bold]s [gray]({})[/gray]".format(
+            self.title,
+            self.elapsed_seconds(),
+            self.elapsed_time_str(),
+        )
+
 
 
     
@@ -199,9 +251,7 @@ class Transcript:
         self._logger: Optional[logging.Logger] = None
         self._handlers = []
         self._time_formatter: Optional[StickyDateTime] = None
-        self._sections_counters = [0]
         self.console: Optional[Console] = None
-
         verbose_table = {
             "debug"  : logging.DEBUG,
             "normal" : logging.INFO,
@@ -209,7 +259,14 @@ class Transcript:
             "silent" : logging.CRITICAL + 1,
         }
         self.level = verbose_table[verbose]
-
+        
+        self._sections_counters = [0]
+        self._timers = []
+        self._times_table = Table()
+        self._times_table.add_column("Sec.", justify="left")
+        self._times_table.add_column("Title", justify="left")
+        self._times_table.add_column("Time", justify="right")
+        self._times_table.add_column("Time (s)", justify="right")
         
 
     def start(self):
@@ -221,7 +278,7 @@ class Transcript:
         self._time_formatter = StickyDateTime(self.date_fmt, self.time_fmt)
         self.console = Console()
 
-        console_handler = QuietInfoRichHandler(
+        console_handler = CustomRichHandler(
             console=self.console,
             show_time=True,
             show_level=True,
@@ -265,10 +322,12 @@ class Transcript:
         """
         self._time_formatter.override_next(timestamp_text)
         self._logger.info(" ".join(str(a) for a in args))
-
+        
         
     def finish(self) -> None:
         self._logger.info(f"[DONE]")
+        self.finalize_sections(0)
+        self.console.print(self._times_table)
 
         builtins.print = self._saved_print
 
@@ -276,14 +335,82 @@ class Transcript:
             handler.close()
             self._logger.removeHandler(handler)
 
+            
+    def progress_bar(self, iterated_over, title: str):
+        # the `console` optionnal arg is needed for the display to play nicely with logs
+        with Progress(console=self.console) as progress:
+            if hasattr(iterated_over, "__len__"):
+                task = progress.add_task(title, total=len(iterated_over))
+            else:
+                task = progress.add_task(title)
+            for x in iterated_over:
+                progress.update(task, advance=1)
+                yield x
+                
 
-    def section(self, depth: int, title: str) -> None:
-        section_format = "[b]{}[/b]"
-        self._sections_counters[0] += 1
-        self.stamp("SEC " + pretty_counters(self._sections_counters),
-                   section_format.format(title))
-        self._logger.info(section_format.format("=" * len (title)))
+    def finalize_sections(self, target_depth: int) -> int:
+        total_depth = len(self._sections_counters)
+        for i in range(target_depth, total_depth):
+            chrono = self._timers.pop()
+            self._times_table.add_row(
+                pretty_counters(self._sections_counters[0:total_depth-i]),
+                chrono.title,
+                chrono.elapsed_time_str(),
+                str(chrono.elapsed_seconds()),
+            )
+            
+        
+    def section(self, title: str) -> None:
+        self.finalize_sections(1)
+        self._timers.append(Chronograph(title))
+        self._sections_counters = [self._sections_counters[0] + 1]
+        h1_format = "[b][blue]{}[/blue][b]"
+        full_title = "\n\nSEC {}  {}".format(
+            pretty_counters(self._sections_counters),
+            title,
+        )
+        self._logger.info(h1_format.format(full_title))
+        self._logger.info(h1_format.format("=" * len (full_title)) + "\n")
 
+        
+    def subsection(self, title: str) -> None:
+        self.finalize_sections(2)
+        self._timers.append(Chronograph(title))
+        if len(self._sections_counters) < 2:
+            self._sections_counters.append(0)
+        self._sections_counters = [
+            self._sections_counters[0],
+            self._sections_counters[1] + 1
+        ]
+        h2_format = "[b]{}[b]"
+        full_title = "\nSEC {}  {}".format(
+            pretty_counters(self._sections_counters),
+            title,
+        )
+        self._logger.info(h2_format.format(full_title))
+        self._logger.info(h2_format.format("-" * len (full_title)))
+
+        
+    def subsubsection(self, title: str) -> None:
+        # finishing the previous section (and subsections)
+        self.finalize_sections(3)
+        self._timers.append(Chronograph(title))
+        if len(self._sections_counters) < 2:
+            self._sections_counters.append(0)
+        self._sections_counters = [
+            self._sections_counters[0],
+            self._sections_counters[1] + 1
+        ]
+        # handling the new section
+        
+        self._sections_counters = self._sections_counters[:depth] + [counter + 1]
+        full_title = "SEC {}  {}".format(
+            pretty_counters(self._sections_counters),
+            title,
+        )
+        self._logger.info(full_title)
+
+        
     def debug(self, reason: str) -> None:
         self._logger.debug(reason)
 
