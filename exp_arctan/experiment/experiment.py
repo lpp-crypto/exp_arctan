@@ -54,6 +54,21 @@ class Experiment:
         self.exit_code = 1
         self.transcript.fail(reason)
 
+        
+    def good(self, reason: str) -> None:
+        self.transcript.good(reason)
+
+
+    def check_if(self, predicate: bool, description: str) -> None:
+        if predicate:
+            self.good("{" + description + "} holds")
+        else:
+            self.fail("{" + description + "} DOES NOT hold")
+            
+
+
+
+# !SECTION! Wrapping the ongoing experiment
 
 def experiment_parameters():
     return ONGOING_EXPERIMENT.parameters_values
@@ -79,3 +94,12 @@ def debug(reason:str="") -> None:
 
 def fail(reason:str="") -> None:
     ONGOING_EXPERIMENT.fail(reason)
+
+def good(reason:str="") -> None:
+    ONGOING_EXPERIMENT.good(reason)
+
+def check_if(predicate: bool, description: str) -> None:
+    ONGOING_EXPERIMENT.check_if(predicate, description)
+
+def exit_code() -> int:
+    return ONGOING_EXPERIMENT.exit_code

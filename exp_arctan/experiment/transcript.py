@@ -38,7 +38,7 @@ from math import floor
 from pathlib import Path
 from typing import Optional
 
-from rich.console import Console
+from rich.console import Console, Theme
 from rich.logging import RichHandler
 from rich.text import Text
 from rich.table import Table
@@ -146,8 +146,11 @@ class StickyDateTime:
         return Text(f"{rendered:<{self._full_width}}"[: self._full_width])
 
 
-# !SUBSECTION! To remove the display of "INFO" 
+# !SUBSECTION! Customize the keywords
 
+
+GOOD_LEVEL = logging.ERROR-1
+logging.addLevelName(GOOD_LEVEL, "GOOD")
 
 class CustomRichHandler(RichHandler):
     LEVEL_OVERRIDES = {
@@ -165,7 +168,6 @@ class CustomRichHandler(RichHandler):
         The names of the levels is hard coded in the logic of RichHandler, so using custom level names would a priori break their highlighting (i.e., FAIL being in red). Rewriting this method bypasses this problem.
         
         """
-        # 
         style = f"logging.level.{record.levelname.lower()}"
         if record.levelno in self.LEVEL_OVERRIDES:
             text = self.LEVEL_OVERRIDES[record.levelno]
@@ -286,7 +288,9 @@ class Transcript:
         self._logger.propagate = False
 
         self._time_formatter = StickyDateTime(self.date_fmt, self.time_fmt)
-        self.console = Console()
+        self.console = Console(theme=Theme({
+            "logging.level.good": "green"
+        }))
 
         console_handler = CustomRichHandler(
             console=self.console,
@@ -337,7 +341,7 @@ class Transcript:
         
     def finish(self) -> None:
         self._logger.info(f"[DONE]")
-        self.finalize_sections(0)
+        # self.finalize_sections(0)
 
         if self.level < logging.INFO:
             self.console.print(self._times_table)
@@ -445,5 +449,8 @@ class Transcript:
         
     def fail(self, reason: str) -> None:
         self._logger.error(reason)
+        
+    def good(self, reason: str) -> None:
+        self._logger.log(logging.ERROR-1, reason)
 
 
