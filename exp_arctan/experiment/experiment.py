@@ -1,26 +1,43 @@
 from .transcript import Transcript
-
+from .parameters import get_cli_args
 
 ONGOING_EXPERIMENT = None
 
 
-
 class Experiment:
-    def __init__(self, title: str="Experiment", parameters: dict={}, verbose: str="normal"):
+    def __init__(
+            self,
+            title: str="Experiment",
+            parameters: list[tuple]=[],
+            description: str="<set `description` parameter at initialization>",
+            verbose: str="normal"
+    ):
         self.title = title
         self.parameters = parameters
+        self.description = description
         self.exit_code = 0
-        self.verbose = verbose
-
         
     def __enter__(self):
+        self.parameters_values = get_cli_args(self.parameters, self.title, self.description)
+        self.verbose = self.parameters_values.verbose
+
         self.transcript = Transcript(
             self.title,
-            verbose=self.verbose
+            verbose=self.verbose,
+            description=self.description
         )
         self.transcript.start()
+        print("Parameters:")
+        for name, value in vars(self.parameters_values).items():
+            print(f"- {name} = {value}")
+
+        
         global ONGOING_EXPERIMENT
         ONGOING_EXPERIMENT = self
+
+        # !TODO! print parameters
+        # !TODO! print current git commit 
+        
         return self
     
 
@@ -38,11 +55,12 @@ class Experiment:
         self.transcript.fail(reason)
 
 
+def experiment_parameters():
+    return ONGOING_EXPERIMENT.parameters_values
 
 def progress_bar(iterated_over, title: str="loop"):
     for x in ONGOING_EXPERIMENT.transcript.progress_bar(iterated_over, title=title):
         yield x
-    
     
 def section(title: str) -> None:
     ONGOING_EXPERIMENT.transcript.section(title)

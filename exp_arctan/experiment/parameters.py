@@ -1,24 +1,6 @@
-"""
-args_from_defaults.py
-
-Given a dict of {variable_name: default_value}, sets up an argparse parser
-that exposes each key as a --variable_name command-line flag, typed
-according to the default value, and falling back to that default when the
-flag is absent.
-
-Two entry points:
-  - build_args(defaults)      -> argparse.Namespace (cfg.variable_name)
-  - inject_globals(defaults)  -> also writes each variable directly into
-                                  the caller's global namespace, so you can
-                                  write `variable_name` as a bare name
-                                  afterwards (convenient for quick scripts,
-                                  at the cost of being implicit/magic).
-"""
-
-from __future__ import annotations
-
 import argparse
-import inspect
+from sys import argv
+
 from typing import Any, Dict, Optional, Sequence
 
 
@@ -38,14 +20,13 @@ def _str2bool(value: str) -> bool:
     )
 
 
-def build_args(
-    defaults: Dict[str, Any],
-    description: Optional[str] = None,
-    args: Optional[Sequence[str]] = None,
+def get_cli_args(
+        parameters: list[tuple],
+        title: str,
+        description: str=""
 ) -> argparse.Namespace:
-    """
-    Build an ArgumentParser from a {variable_name: default_value} dict and
-    parse it, returning a Namespace with one attribute per key.
+    """Builds an ArgumentParser, parses the CLI arguments, and returns a Namespace with one attribute per key. The input is a list of the form [(variable_name, default_value, "description")].
+    
 
     Type inference rules, applied per entry based on type(default_value):
       - bool          -> parsed via _str2bool (accepts true/false/yes/no/1/0)
@@ -57,50 +38,50 @@ def build_args(
       - anything else -> parsed with type(default_value) directly
                          (int, float, str, Path, etc. all work this way)
 
-    `args` is passed straight through to parser.parse_args(); leave it None
-    to parse sys.argv as usual (mainly useful for testing with an explicit
-    argv list instead of the real command line).
     """
+    if "verbose" not in [entry[0] for entry in parameters]:
+        parameters.append(("verbose", "normal", "Decide how verbose the output is. Must be one of !TODO!"))
+                         
     parser = argparse.ArgumentParser(description=description)
 
-    for name, default in defaults.items():
+    for entry in parameters:
+        name = entry[0]
+        default = entry[1] 
+        var_description = entry[2] if len(entry) > 2 else ""
+        var_description += f" (defaults to \"{default}\")"
         flag = f"--{name}"
-
-        if isinstance(default, bool):
+        if isinstance(default, bool): # Claude insists this particular case is needed
             parser.add_argument(
-                flag, type=_str2bool, default=default, metavar="{true,false}"
+                flag,
+                type=_str2bool,
+                default=default,
+                metavar="{true,false}",
+                help=var_description
             )
         elif default is None:
-            parser.add_argument(flag, type=str, default=None)
+            parser.add_argument(
+                flag,
+                type=str,
+                default=None,
+                help=var_description
+            )
         elif isinstance(default, (list, tuple)):
             elem_type = type(default[0]) if len(default) > 0 else str
             parser.add_argument(
-                flag, type=elem_type, nargs="*", default=list(default)
+                flag,
+                type=elem_type,
+                nargs="*",
+                default=list(default),
+                help=var_description
             )
         else:
-            parser.add_argument(flag, type=type(default), default=default)
+            parser.add_argument(
+                flag,
+                type=type(default),
+                default=default,
+                help=var_description
+            )
 
-    return parser.parse_args(args)
+    return parser.parse_args(argv[1:])
 
 
-def inject_globals(
-    defaults: Dict[str, Any],
-    description: Optional[str] = None,
-    args: Optional[Sequence[str]] = None,
-) -> argparse.Namespace:
-    """
-    Same as build_args, but also writes each resulting value directly into
-    the *caller's* global namespace, so e.g. `defaults = {"n_trials": 10}`
-    followed by `inject_globals(defaults)` makes a bare `n_trials` name
-    available in the calling module -- no `cfg.n_trials` needed.
-
-    This uses frame introspection to reach the caller's globals(); it only
-    works correctly when called directly from the top level of a script
-    (not from inside a function you intend to reuse elsewhere), since it
-    mutates whatever module happens to be one frame up. Prefer build_args()
-    if you want something less implicit / more testable.
-    """
-    namespace = build_args(defaults, description=description, args=args)
-    caller_globals = inspect.stack()[1].frame.f_globals
-    caller_globals.update(vars(namespace))
-    return namespace

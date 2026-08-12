@@ -245,12 +245,14 @@ class Transcript:
     def __init__(
         self,
         title: str,
+        description: str="",
         logfile: Optional[str] = None,
         date_fmt: str = "%m/%d/%y",
         time_fmt: str = "%H:%M:%S",
         verbose: str = "normal"
     ):
         self.title = title
+        self.description = description
         self.logfile = Path(logfile) if logfile else None
         self.date_fmt = date_fmt
         self.time_fmt = time_fmt
@@ -317,7 +319,8 @@ class Transcript:
         # Markup like [bold]...[/bold] only renders in the RichHandler
         # (console); a plain FileHandler would log it as literal text.
         # Keeping this plain avoids that asymmetry between console and file.
-        self._logger.info(f"=== {self.title} : starting ===")
+        self._logger.info(f"=== {self.title}  ===\n\n")
+        self._logger.info(self.description + "\n")
         
 
 
@@ -336,8 +339,8 @@ class Transcript:
         self._logger.info(f"[DONE]")
         self.finalize_sections(0)
 
-        # !TODO! the times table doesn't work
-        self.console.print(self._times_table)
+        if self.level < logging.INFO:
+            self.console.print(self._times_table)
 
         builtins.print = self._saved_print
 
@@ -351,9 +354,10 @@ class Transcript:
             for x in iterated_over:
                 yield x
         else:
+            # !TODO!  align the bar so it doesn't go in the time-stamp area.
             columns = (
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
+                TextColumn(" "*25 + "[progress.description]{task.description}"),
+                BarColumn(bar_width=22),
                 MofNCompleteColumn(),
                 TimeElapsedColumn(),
                 TimeRemainingColumn(),
@@ -370,6 +374,7 @@ class Transcript:
                     
 
     def finalize_sections(self, target_depth: int) -> int:
+        # !TODO! the times table doesn't work
         total_depth = len(self._sections_counters)
         for i in range(target_depth, total_depth):
             chrono = self._timers.pop()
@@ -386,7 +391,7 @@ class Transcript:
         self._timers.append(Chronograph(title))
         self._sections_counters = [self._sections_counters[0] + 1]
         h1_format = "[b][blue]{}[/blue][b]"
-        full_title = "\n\nSEC {}  {}".format(
+        full_title = "\n\n{}  {}".format(
             pretty_counters(self._sections_counters),
             title,
         )
@@ -404,7 +409,7 @@ class Transcript:
             self._sections_counters[1] + 1
         ]
         h2_format = "[b]{}[b]"
-        full_title = "\nSEC {}  {}".format(
+        full_title = "\n{}  {}".format(
             pretty_counters(self._sections_counters),
             title,
         )
@@ -425,7 +430,7 @@ class Transcript:
         # handling the new section
         
         self._sections_counters = self._sections_counters[:depth] + [counter + 1]
-        full_title = "SEC {}  {}".format(
+        full_title = "{}  {}".format(
             pretty_counters(self._sections_counters),
             title,
         )
