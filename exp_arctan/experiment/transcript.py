@@ -220,7 +220,15 @@ class Chronograph:
 
     
 # !SECTION!  The actual Transcript class
-    
+
+VERBOSE_TABLE = {
+    "debug"  : logging.DEBUG,
+    "normal" : logging.INFO,
+    "errors" : logging.ERROR,
+    "silent" : logging.CRITICAL + 1,
+}
+
+
 class Transcript:
     """
     Context manager that routes `print()` through a Rich-backed logger for
@@ -264,13 +272,7 @@ class Transcript:
         self._handlers = []
         self._time_formatter: Optional[StickyDateTime] = None
         self.console: Optional[Console] = None
-        verbose_table = {
-            "debug"  : logging.DEBUG,
-            "normal" : logging.INFO,
-            "errors" : logging.ERROR,
-            "silent" : logging.CRITICAL + 1,
-        }
-        self.level = verbose_table[verbose]
+        self.level = VERBOSE_TABLE[verbose]
         
         self._sections_counters = [0]
         self._timers = []

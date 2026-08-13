@@ -1,5 +1,6 @@
 from time import sleep
 import itertools
+from random import randint
 
 from exp_arctan import *
 
@@ -21,12 +22,17 @@ if __name__ == "__main__":
         print({0: 1, 2: "bla"})
         print("bli")
         debug("debugging data")
-        fail("oh well.")
-        sleep(1.5)
 
-        subsection("second subsection")
+        subsection("testing `check_if`")
+        
+        for x in range(0, 10):
+            v = randint(0, 9)
+            check_if_strictly_smaller(v, 5, "random value that should be small")
+
+        subsection("third subsection")
         
         print("blo")
+        sleep(1.5)
         
         section("and now for something completely different")
 

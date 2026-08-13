@@ -2,6 +2,7 @@ import argparse
 from sys import argv
 
 from typing import Any, Dict, Optional, Sequence
+from .transcript import VERBOSE_TABLE
 
 
 def _str2bool(value: str) -> bool:
@@ -40,7 +41,9 @@ def get_cli_args(
 
     """
     if "verbose" not in [entry[0] for entry in parameters]:
-        parameters.append(("verbose", "normal", "Decide how verbose the output is. Must be one of !TODO!"))
+        desc = "Decide how verbose the output is. Must be one of \""
+        desc += "\", \"".join(VERBOSE_TABLE.keys()) + "\""
+        parameters.append(("verbose", "normal", desc))
                          
     parser = argparse.ArgumentParser(description=description)
 

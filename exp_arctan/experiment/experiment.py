@@ -35,7 +35,6 @@ class Experiment:
         global ONGOING_EXPERIMENT
         ONGOING_EXPERIMENT = self
 
-        # !TODO! print parameters
         # !TODO! print current git commit 
         
         return self
@@ -64,8 +63,23 @@ class Experiment:
             self.good("{" + description + "} holds")
         else:
             self.fail("{" + description + "} DOES NOT hold")
-            
 
+            
+    def check_if_equality(self, v1, v2, description: str=""):
+        if v1 == v2:
+            self.good(f"{v1} == {v2} {description}")
+        else:
+            self.fail(f"{v1} != {v2} {description}")
+
+            
+    def check_if_strictly_smaller(self, v, bound, description: str=""):
+        if v < bound:
+            self.good(f"{v} < {bound} {description}")
+        else:
+            self.fail(f"{v} >= {bound} {description}")
+
+            
+            
 
 
 # !SECTION! Wrapping the ongoing experiment
@@ -100,6 +114,12 @@ def good(reason:str="") -> None:
 
 def check_if(predicate: bool, description: str) -> None:
     ONGOING_EXPERIMENT.check_if(predicate, description)
+
+def check_if_equality(v1, v2, description: str=""):
+    ONGOING_EXPERIMENT.check_if_equality(v1, v2, description)
+
+def check_if_strictly_smaller(v, bound, description: str=""):
+    ONGOING_EXPERIMENT.check_if_strictly_smaller(v, bound, description)
 
 def exit_code() -> int:
     return ONGOING_EXPERIMENT.exit_code
