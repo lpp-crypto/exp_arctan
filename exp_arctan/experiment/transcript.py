@@ -307,7 +307,7 @@ class Transcript:
         if self._sections_counters != [0]:
             self.finalize_sections(1)
         self._sections_counters = [self._sections_counters[0] + 1]
-        h1_format = "[b][blue]{}[/blue][b]"
+        h1_format = "[b][blue]{}[/blue][/b]"
         indices = pretty_counters(self._sections_counters)
         full_title = f"\n\n{indices}  {title}"
         self._logger.info(h1_format.format(full_title))
@@ -323,7 +323,7 @@ class Transcript:
             self._sections_counters[0],
             self._sections_counters[1] + 1
         ]
-        h2_format = "[b]{}[b]"
+        h2_format = "[b]{}[/b]"
         indices = pretty_counters(self._sections_counters)
         full_title = f"\n{indices}  {title}"
         self._logger.info(h2_format.format(full_title))
@@ -339,7 +339,7 @@ class Transcript:
             self._sections_counters[0],
             self._sections_counters[1] + 1
         ]
-        self._sections_counters = self._sections_counters[:depth] + [counter + 1]
+        self._sections_counters = self._sections_counters[:2] + [self._sections_counters[2] + 1]
         indices = pretty_counters(self._sections_counters)
         full_title = f"{indices}  {title}"
         self._logger.info(full_title)
