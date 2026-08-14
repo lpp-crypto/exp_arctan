@@ -151,14 +151,17 @@ class StickyDateTime:
 
 GOOD_LEVEL = logging.ERROR-1
 logging.addLevelName(GOOD_LEVEL, "GOOD")
+END_LEVEL = logging.INFO-1
+logging.addLevelName(END_LEVEL, "END")
 
 class CustomRichHandler(RichHandler):
     LEVEL_OVERRIDES = {
-        logging.INFO-1: "END",
-        logging.INFO: "",
-        logging.ERROR: "FAIL",
-        logging.WARNING: "WARN",
-        logging.CRITICAL: "CRIT",
+        logging.DEBUG: ("DEBG", "grey58"),
+        logging.INFO-1: ("END", "blue"),
+        logging.INFO: ("", None),
+        logging.ERROR: ("FAIL", "bold red"),
+        logging.WARNING: ("WARN", "orange"),
+        logging.CRITICAL: ("CRIT", "bold red on white"),
     }
     LEVEL_WIDTH = 4
 
@@ -168,10 +171,10 @@ class CustomRichHandler(RichHandler):
         The names of the levels is hard coded in the logic of RichHandler, so using custom level names would a priori break their highlighting (i.e., FAIL being in red). Rewriting this method bypasses this problem.
         
         """
-        style = f"logging.level.{record.levelname.lower()}"
         if record.levelno in self.LEVEL_OVERRIDES:
-            text = self.LEVEL_OVERRIDES[record.levelno]
+            text, style = self.LEVEL_OVERRIDES[record.levelno]
         else:
+            style = f"logging.level.{record.levelname.lower()}"
             text = record.levelname
         return Text(text.ljust(self.LEVEL_WIDTH)[: self.LEVEL_WIDTH], style=style)
 
@@ -187,7 +190,7 @@ class Chronograph:
         self.start_time = datetime.datetime.now()
 
     def __str__(self):
-        return "\"{}\" lasted {}s".format(
+        return "{:10s} lasted {}s".format(
             self.title,
             self.elapsed_seconds(),
         )
@@ -223,7 +226,7 @@ class Chronograph:
 
 VERBOSE_TABLE = {
     "debug"  : logging.DEBUG,
-    "normal" : logging.INFO,
+    "normal" : END_LEVEL,
     "errors" : logging.ERROR,
     "silent" : logging.CRITICAL + 1,
 }
@@ -275,7 +278,7 @@ class Transcript:
         self.level = VERBOSE_TABLE[verbose]
         
         self._sections_counters = [0]
-        self._timers = []
+        self._timers = [ Chronograph('"' + self.title + '"' ) ]
         self._times_table = Table()
         self._times_table.add_column("Sec.", justify="left")
         self._times_table.add_column("Title", justify="left")
@@ -342,11 +345,10 @@ class Transcript:
         
         
     def finish(self) -> None:
-        self._logger.info(f"[DONE]")
-        # self.finalize_sections(0)
+        self.finalize_sections(0)
 
-        if self.level < logging.INFO:
-            self.console.print(self._times_table)
+        # if self.level < logging.INFO:
+        #     self.console.print(self._times_table)
 
         builtins.print = self._saved_print
 
@@ -382,32 +384,31 @@ class Transcript:
     def finalize_sections(self, target_depth: int) -> int:
         # !TODO! the times table doesn't work
         total_depth = len(self._sections_counters)
-        for i in range(target_depth, total_depth):
+        while len(self._timers) > target_depth:
             chrono = self._timers.pop()
-            self._times_table.add_row(
-                pretty_counters(self._sections_counters[0:total_depth-i]),
-                chrono.title,
-                chrono.elapsed_time_str(),
-                str(chrono.elapsed_seconds()),
-            )
+            # self._times_table.add_row(
+            #     pretty_counters(self._sections_counters[0:total_depth-i]),
+            #     chrono.title,
+            #     chrono.elapsed_time_str(),
+            #     str(chrono.elapsed_seconds()),
+            # )
+            self._logger.log(END_LEVEL, str(chrono))
             
         
     def section(self, title: str) -> None:
-        self.finalize_sections(1)
-        self._timers.append(Chronograph(title))
+        if self._sections_counters != [0]:
+            self.finalize_sections(1)
         self._sections_counters = [self._sections_counters[0] + 1]
         h1_format = "[b][blue]{}[/blue][b]"
-        full_title = "\n\n{}  {}".format(
-            pretty_counters(self._sections_counters),
-            title,
-        )
+        indices = pretty_counters(self._sections_counters)
+        full_title = f"\n\n{indices}  {title}"
         self._logger.info(h1_format.format(full_title))
         self._logger.info(h1_format.format("=" * len (full_title)) + "\n")
+        self._timers.append(Chronograph("SEC " + indices))
 
         
     def subsection(self, title: str) -> None:
         self.finalize_sections(2)
-        self._timers.append(Chronograph(title))
         if len(self._sections_counters) < 2:
             self._sections_counters.append(0)
         self._sections_counters = [
@@ -415,32 +416,26 @@ class Transcript:
             self._sections_counters[1] + 1
         ]
         h2_format = "[b]{}[b]"
-        full_title = "\n{}  {}".format(
-            pretty_counters(self._sections_counters),
-            title,
-        )
+        indices = pretty_counters(self._sections_counters)
+        full_title = f"\n{indices}  {title}"
         self._logger.info(h2_format.format(full_title))
         self._logger.info(h2_format.format("-" * len (full_title)))
+        self._timers.append(Chronograph("SEC " + indices))
 
         
     def subsubsection(self, title: str) -> None:
-        # finishing the previous section (and subsections)
         self.finalize_sections(3)
-        self._timers.append(Chronograph(title))
         if len(self._sections_counters) < 2:
             self._sections_counters.append(0)
         self._sections_counters = [
             self._sections_counters[0],
             self._sections_counters[1] + 1
         ]
-        # handling the new section
-        
         self._sections_counters = self._sections_counters[:depth] + [counter + 1]
-        full_title = "{}  {}".format(
-            pretty_counters(self._sections_counters),
-            title,
-        )
+        indices = pretty_counters(self._sections_counters)
+        full_title = f"{indices}  {title}"
         self._logger.info(full_title)
+        self._timers.append(Chronograph("SEC " + indices))
 
         
     def debug(self, reason: str) -> None:
@@ -453,6 +448,6 @@ class Transcript:
         self._logger.error(reason)
         
     def good(self, reason: str) -> None:
-        self._logger.log(logging.ERROR-1, reason)
+        self._logger.log(GOOD_LEVEL, reason)
 
 
