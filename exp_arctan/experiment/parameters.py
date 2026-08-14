@@ -40,10 +40,14 @@ def get_cli_args(
                          (int, float, str, Path, etc. all work this way)
 
     """
-    if "verbose" not in [entry[0] for entry in parameters]:
+    current_params = [entry[0] for entry in parameters]
+    if "verbose" not in current_params:
         desc = "Decide how verbose the output is. Must be one of \""
         desc += "\", \"".join(VERBOSE_TABLE.keys()) + "\""
         parameters.append(("verbose", "normal", desc))
+    if "early_abort" not in current_params:
+        desc = "If set, the program terminates at the first \"FAIL\"."
+        parameters.append(("early_abort", False, desc))
                          
     parser = argparse.ArgumentParser(description=description)
 
@@ -52,7 +56,7 @@ def get_cli_args(
         default = entry[1] 
         var_description = entry[2] if len(entry) > 2 else ""
         var_description += f" (defaults to \"{default}\")"
-        flag = f"--{name}"
+        flag = f"-{name}"
         if isinstance(default, bool): # Claude insists this particular case is needed
             parser.add_argument(
                 flag,

@@ -59,10 +59,12 @@ from .utils import pretty_counters, StickyDateTime, Chronograph
 
 # !SUBSECTION! Custom levels
 
-GOOD_LEVEL = logging.ERROR-1
+GOOD_LEVEL = logging.ERROR-3
 logging.addLevelName(GOOD_LEVEL, "GOOD")
-END_LEVEL = logging.INFO-1
-logging.addLevelName(END_LEVEL, "END")
+TIME_LEVEL = logging.INFO-3
+logging.addLevelName(TIME_LEVEL, "TIME")
+TITLE_LEVEL = logging.ERROR+3
+logging.addLevelName(TITLE_LEVEL, "####")
 
 
 # !SUBSECTION! Custom Rich-based terminal log handler
@@ -70,10 +72,11 @@ logging.addLevelName(END_LEVEL, "END")
 class CustomRichHandler(RichHandler):
     LEVEL_OVERRIDES = {
         logging.DEBUG: ("DEBG", "grey58"),
-        logging.INFO-1: ("END", "blue"),
+        TIME_LEVEL: ("TIME", "blue"),
         logging.INFO: ("", None),
-        logging.ERROR: ("FAIL", "bold red"),
         logging.WARNING: ("WARN", "orange"),
+        logging.ERROR: ("FAIL", "bold red"),
+        TITLE_LEVEL: ("####", "bold yellow"),
         logging.CRITICAL: ("CRIT", "bold red on white"),
     }
     LEVEL_WIDTH = 4
@@ -128,11 +131,45 @@ class MarkupStrippingFormatter(logging.Formatter):
 
 VERBOSE_TABLE = {
     "debug"  : logging.DEBUG,
-    "normal" : END_LEVEL,
+    "normal" : TIME_LEVEL,
     "errors" : logging.ERROR,
     "silent" : logging.CRITICAL + 1,
 }
 
+DEFAULT_INDENT = "  "
+
+class IndentedPrinter:
+    def __init__(self, logger):
+        self._logger = logger
+        self.indent = ""
+
+    def info(self, content: str) -> None:
+        lines = content.split("\n")
+        to_print = ""
+        for l in lines:
+            to_print += self.indent + l + "\n"
+        self._logger.info(to_print[:-1])
+
+    def log(self, level: int, content: str) -> None:
+        self._logger.log(level, self.indent + content)
+
+    def debug(self, content: str) -> None:
+        self._logger.debug(self.indent + content)
+
+    def warning(self, content: str) -> None:
+        self._logger.warning(self.indent + content)
+
+    def error(self, content: str) -> None:
+        self._logger.error(self.indent + content)
+        
+    def title(self, content: str) -> None:
+        self._logger.info(content)
+
+    def adjust_indent(self, width: int) -> None:
+        self.indent = DEFAULT_INDENT*width
+
+    
+        
 
 class Transcript:
     """
@@ -164,7 +201,7 @@ class Transcript:
         logfile: Optional[str] = None,
         date_fmt: str = "%m/%d/%y",
         time_fmt: str = "%H:%M:%S",
-        verbose = END_LEVEL
+        verbose = TIME_LEVEL
     ):
         self.title = title
         self.description = description
@@ -227,6 +264,7 @@ class Transcript:
             self._handlers.append(file_handler)
 
         self._saved_print = builtins.print
+        self._logger = IndentedPrinter(self._logger)
         builtins.print = lambda *a, **k: self._logger.info(
             " ".join(str(x) for x in a)
         )
@@ -234,7 +272,7 @@ class Transcript:
         # Markup like [bold]...[/bold] only renders in the RichHandler
         # (console); a plain FileHandler would log it as literal text.
         # Keeping this plain avoids that asymmetry between console and file.
-        self._logger.info(f"=== {self.title}  ===\n\n")
+        self._logger.log(TITLE_LEVEL, f"{self.title}\n")
         self._logger.info(self.description + "\n")
         
 
@@ -260,7 +298,7 @@ class Transcript:
 
         for handler in self._handlers:
             handler.close()
-            self._logger.removeHandler(handler)
+            self._logger._logger.removeHandler(handler)
 
             
     def progress_bar(self, iterated_over, title: str):
@@ -269,7 +307,7 @@ class Transcript:
                 yield x
         else:
             columns = (
-                TextColumn(" "*25 + "[progress.description]{task.description}"),
+                TextColumn(" "*25 + self._logger.indent + "[progress.description]{task.description}"),
                 BarColumn(bar_width=22),
                 MofNCompleteColumn(),
                 TimeElapsedColumn(),
@@ -298,9 +336,8 @@ class Transcript:
             #     chrono.elapsed_time_str(),
             #     str(chrono.elapsed_seconds()),
             # )
-            to_print += str(chrono) + " ; "
-        if len(to_print) > 0:
-            self._logger.log(END_LEVEL, to_print[:-2])
+            self._logger.adjust_indent(len(self._timers) - 1)
+            self._logger.log(TIME_LEVEL, str(chrono))
             
         
     def section(self, title: str) -> None:
@@ -313,6 +350,7 @@ class Transcript:
         self._logger.info(h1_format.format(full_title))
         self._logger.info(h1_format.format("=" * len (full_title)) + "\n")
         self._timers.append(Chronograph("SEC " + indices))
+        self._logger.adjust_indent(1)
 
         
     def subsection(self, title: str) -> None:
@@ -329,6 +367,7 @@ class Transcript:
         self._logger.info(h2_format.format(full_title))
         self._logger.info(h2_format.format("-" * len (full_title)))
         self._timers.append(Chronograph("SEC " + indices))
+        self._logger.adjust_indent(2)
 
         
     def subsubsection(self, title: str) -> None:
@@ -344,6 +383,7 @@ class Transcript:
         full_title = f"{indices}  {title}"
         self._logger.info(full_title)
         self._timers.append(Chronograph("SEC " + indices))
+        self._logger.adjust_indent(3)
 
         
     def debug(self, reason: str) -> None:

@@ -10,7 +10,8 @@ class Experiment:
             title: str="Experiment",
             parameters: list[tuple]=[],
             description: str="<set `description` parameter at initialization>",
-            verbose: str="normal"
+            verbose: str="normal",
+            early_abort: bool=False
     ):
         self.title = title
         self.parameters = parameters
@@ -20,6 +21,7 @@ class Experiment:
     def __enter__(self):
         self.parameters_values = get_cli_args(self.parameters, self.title, self.description)
         self.verbose = self.parameters_values.verbose
+        self.early_abort = self.parameters_values.early_abort
 
         self.transcript = Transcript(
             self.title,
@@ -53,6 +55,8 @@ class Experiment:
     def fail(self, reason: str) -> None:
         self.exit_code = 1
         self.transcript.fail(reason)
+        if self.early_abort:
+            raise Exception("early abort")
 
         
     def good(self, reason: str) -> None:
