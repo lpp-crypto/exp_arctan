@@ -24,7 +24,8 @@ class Experiment:
         self.transcript = Transcript(
             self.title,
             verbose=self.verbose,
-            description=self.description
+            description=self.description,
+            logfile="./log.log"
         )
         self.transcript.start()
         print("Parameters:")

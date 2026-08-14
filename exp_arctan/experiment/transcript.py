@@ -32,9 +32,8 @@ from __future__ import annotations
 import builtins
 import logging
 import sys
-import datetime
 
-from math import floor
+
 from pathlib import Path
 from typing import Optional
 
@@ -51,108 +50,22 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+from .utils import pretty_counters, StickyDateTime, Chronograph
 
 
-def to_roman(n: int) -> str:
-    if not 0 <= n < 4000:
-        raise ValueError("Roman numerals only support 1-3999")
-    elif n == 0:
-        return "0"
-    values = [
-        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
-        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
-        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
-    ]
-    result = []
-    for value, symbol in values:
-        count, n = divmod(n, value)
-        result.append(symbol * count)
-    return "".join(result)
+
+# !SECTION! Customize the appearance of the transcripts
 
 
-def pretty_counters(counters):
-    result = to_roman(counters[0])
-    if len(counters) > 1:
-        result += "-" + str(counters[1])
-    if len(counters) > 2:
-        result += "." + to_roman(counters[2]).lower()
-    return result + ")"
-
-
-# !SECTION! Trick to bypass some `logging` behaviors
-
-# !SUBSECTION! To not display the time on every line if it hasn't changed 
-
-class StickyDateTime:
-    """
-    Callable time formatter for RichHandler.log_time_format.
-
-    Behavior per emitted line, compared to the previous line:
-      - date changed            -> "[MM/DD/YY HH:MM:SS]"   (full)
-      - date same, time changed -> "[          HH:MM:SS]"  (date blanked)
-      - date and time unchanged -> "                    "  (fully blank)
-
-    All three branches render to the same character width so the console
-    table's timestamp column stays aligned. Pass `omit_repeated_times=False`
-    to RichHandler so its own (coarser, all-or-nothing) collapsing logic
-    doesn't fight with this one.
-    """
-
-    def __init__(self, date_fmt: str = "%m/%d/%y", time_fmt: str = "%H:%M:%S"):
-        self.date_fmt = date_fmt
-        self.time_fmt = time_fmt
-        self._last_date: Optional[str] = None
-        self._last_time: Optional[str] = None
-        self._override: Optional[str] = None
-
-        # Width of a fully-rendered timestamp, e.g. "[08/07/26 11:39:21]".
-        # Computed once from a throwaway strftime so it stays correct even
-        # if date_fmt/time_fmt are customized.
-        import datetime as _dt
-        probe = _dt.datetime(2000, 1, 1)
-        self._full_width = len(
-            f"[{probe.strftime(self.date_fmt)} {probe.strftime(self.time_fmt)}]"
-        )
-
-        
-    def override_next(self, text: str) -> None:
-        """
-        Replace the timestamp field for the *next* rendered line only.
-        `text` is padded/truncated to match the normal timestamp width so
-        columns stay aligned; wrap it in brackets yourself if you want them.
-        """
-        self._override = text
-
-        
-    def __call__(self, dt) -> Text:
-        if self._override is not None:
-            text, self._override = self._override, None  # consume: one-shot
-            return Text(f"{text:<{self._full_width}}"[: self._full_width])
-
-        date_str = dt.strftime(self.date_fmt)
-        time_str = dt.strftime(self.time_fmt)
-
-        if date_str == self._last_date and time_str == self._last_time:
-            return Text(" " * self._full_width)
-
-        if date_str == self._last_date:
-            self._last_time = time_str
-            rendered = f"[{' ' * len(date_str)} {time_str}]"
-            return Text(f"{rendered:<{self._full_width}}"[: self._full_width])
-
-        self._last_date = date_str
-        self._last_time = time_str
-        rendered = f"[{date_str} {time_str}]"
-        return Text(f"{rendered:<{self._full_width}}"[: self._full_width])
-
-
-# !SUBSECTION! Customize the keywords
-
+# !SUBSECTION! Custom levels
 
 GOOD_LEVEL = logging.ERROR-1
 logging.addLevelName(GOOD_LEVEL, "GOOD")
 END_LEVEL = logging.INFO-1
 logging.addLevelName(END_LEVEL, "END")
+
+
+# !SUBSECTION! Custom Rich-based terminal log handler
 
 class CustomRichHandler(RichHandler):
     LEVEL_OVERRIDES = {
@@ -179,45 +92,34 @@ class CustomRichHandler(RichHandler):
         return Text(text.ljust(self.LEVEL_WIDTH)[: self.LEVEL_WIDTH], style=style)
 
     
-
-# !SUBSECTION! To simplify tracking durations: the Chonograph
-
+# !SUBSECTION! Custom file log handler
 
 
-class Chronograph:
-    def __init__(self, title):
-        self.title = title
-        self.start_time = datetime.datetime.now()
 
-    def __str__(self):
-        return "{:10s} lasted {}s".format(
-            self.title,
-            self.elapsed_seconds(),
-        )
+class MarkupStrippingFormatter(logging.Formatter):
+    """
+    Formatter that strips Rich markup tags (e.g. "[bold]...[/bold]",
+    "[green]OK[/green]") from a message before applying the standard
+    logging format string.
+ 
+    Use this for handlers that write plain text (like a FileHandler) --
+    Rich markup is meant to be interpreted by a Console/RichHandler, and
+    without one, tags like "[green]OK[/green]" would otherwise show up
+    verbatim (brackets and all) in a plain-text log file.
+    """
+ 
+    def format(self, record: logging.LogRecord) -> str:
+        original_msg = record.getMessage()
+        try:
+            stripped = Text.from_markup(original_msg).plain.strip()
+        except Exception:
+            # If markup parsing fails for any reason, fall back to the
+            # raw message rather than losing the log line entirely.
+            stripped = original_msg
+        record.msg = stripped
+        record.args = None
+        return super().format(record)
 
-    def elapsed_seconds(self):
-        return floor((datetime.datetime.now() - self.start_time).total_seconds())
-
-    
-    def elapsed_time_str(self):
-        tot_secs = self.elapsed_seconds()
-        days = floor(tot_secs / 86400)
-        hours = floor((tot_secs % 86400) / 3600)
-        minutes = floor((tot_secs % 3600) / 60)
-        seconds = tot_secs % 60
-        return "{:d}d {:02d}h {:02d}m {:2d}s".format(
-            days,
-            hours,
-            minutes,
-            seconds
-        )
-
-    def __rich_str__(self):
-        return "[blue]{}[/blue] lasted [bold]{}[/bold]s [gray]({})[/gray]".format(
-            self.title,
-            self.elapsed_seconds(),
-            self.elapsed_time_str(),
-        )
 
 
 
@@ -262,7 +164,7 @@ class Transcript:
         logfile: Optional[str] = None,
         date_fmt: str = "%m/%d/%y",
         time_fmt: str = "%H:%M:%S",
-        verbose: str = "normal"
+        verbose = END_LEVEL
     ):
         self.title = title
         self.description = description
@@ -275,7 +177,10 @@ class Transcript:
         self._handlers = []
         self._time_formatter: Optional[StickyDateTime] = None
         self.console: Optional[Console] = None
-        self.level = VERBOSE_TABLE[verbose]
+        try:
+            self.level = int(verbose)
+        except:
+            self.level = VERBOSE_TABLE[verbose]
         
         self._sections_counters = [0]
         self._timers = [ Chronograph('"' + self.title + '"' ) ]
@@ -312,11 +217,12 @@ class Transcript:
         self._handlers.append(console_handler)
 
         if self.logfile:
-            plain_formatter = logging.Formatter(
+            plain_formatter = MarkupStrippingFormatter(
                 "%(asctime)s | %(message)s", datefmt="%H:%M:%S"
             )
             file_handler = logging.FileHandler(self.logfile)
             file_handler.setFormatter(plain_formatter)
+            file_handler.setLevel(1)
             self._logger.addHandler(file_handler)
             self._handlers.append(file_handler)
 
@@ -362,7 +268,6 @@ class Transcript:
             for x in iterated_over:
                 yield x
         else:
-            # !TODO!  align the bar so it doesn't go in the time-stamp area.
             columns = (
                 TextColumn(" "*25 + "[progress.description]{task.description}"),
                 BarColumn(bar_width=22),
@@ -384,6 +289,7 @@ class Transcript:
     def finalize_sections(self, target_depth: int) -> int:
         # !TODO! the times table doesn't work
         total_depth = len(self._sections_counters)
+        to_print = ""
         while len(self._timers) > target_depth:
             chrono = self._timers.pop()
             # self._times_table.add_row(
@@ -392,7 +298,9 @@ class Transcript:
             #     chrono.elapsed_time_str(),
             #     str(chrono.elapsed_seconds()),
             # )
-            self._logger.log(END_LEVEL, str(chrono))
+            to_print += str(chrono) + " ; "
+        if len(to_print) > 0:
+            self._logger.log(END_LEVEL, to_print[:-2])
             
         
     def section(self, title: str) -> None:
